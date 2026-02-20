@@ -78,7 +78,7 @@ export const App: React.FC = () => {
     } catch {
       showError('Unable to add a todo');
       setTempTodo(null);
-      setTimeout(focusField, 10);
+      setTimeout(focusField, 0);
 
       return false;
     }
