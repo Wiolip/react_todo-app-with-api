@@ -32,9 +32,19 @@ export const App: React.FC = () => {
   };
 
   //error
+  const errorTimeoutRef = useRef<number | null>(null);
+
   const showError = (message: string) => {
     setError(message);
-    setTimeout(() => setError(null), 3000);
+
+    if (errorTimeoutRef.current) {
+      clearTimeout(errorTimeoutRef.current);
+    }
+
+    errorTimeoutRef.current = window.setTimeout(() => {
+      setError(null);
+      errorTimeoutRef.current = null;
+    }, 3000);
   };
 
   // Wczytywanie todos
@@ -47,6 +57,12 @@ export const App: React.FC = () => {
       .then(setTodos)
       .catch(() => showError('Unable to load todos'))
       .finally(focusField);
+
+    return () => {
+      if (errorTimeoutRef.current) {
+        clearTimeout(errorTimeoutRef.current);
+      }
+    };
   }, []);
 
   const handleAdd = async (title: string): Promise<boolean> => {
@@ -147,7 +163,7 @@ export const App: React.FC = () => {
 
       <div className="todoapp__content">
         <header className="todoapp__header">
-          {todos.length > 0 && (
+          {(todos.length > 0 || tempTodo) && (
             <button
               type="button"
               className={classNames('todoapp__toggle-all', {
@@ -164,13 +180,15 @@ export const App: React.FC = () => {
           />
         </header>
 
-        <TodoList
-          todos={filteredTodos}
-          tempTodo={tempTodo}
-          loadingIds={loadingIds}
-          onDelete={handleDelete}
-          onUpdate={handleUpdate}
-        />
+        {(todos.length > 0 || tempTodo) && (
+          <TodoList
+            todos={filteredTodos}
+            tempTodo={tempTodo}
+            loadingIds={loadingIds}
+            onDelete={handleDelete}
+            onUpdate={handleUpdate}
+          />
+        )}
 
         {/* Footer */}
         {(todos.length > 0 || tempTodo) && (
@@ -191,7 +209,6 @@ export const App: React.FC = () => {
           </footer>
         )}
       </div>
-
       <ErrorNotification message={error} onClose={() => setError(null)} />
     </div>
   );
