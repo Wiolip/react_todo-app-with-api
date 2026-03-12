@@ -7,6 +7,8 @@ interface TodoListProps {
   tempTodo: Todo | null;
   loadingIds: number[];
   onDelete: (id: number) => void;
+  onToggle: (todo: Todo) => void;
+  onRename: (todo: Todo, title: string) => Promise<boolean>;
 }
 
 export const TodoList: React.FC<TodoListProps> = ({
@@ -14,6 +16,8 @@ export const TodoList: React.FC<TodoListProps> = ({
   tempTodo,
   loadingIds,
   onDelete,
+  onToggle,
+  onRename,
 }) => {
   return (
     <section className="todoapp__main" data-cy="TodoList">
@@ -23,6 +27,8 @@ export const TodoList: React.FC<TodoListProps> = ({
           todo={todo}
           isLoading={loadingIds.includes(todo.id)}
           onDelete={onDelete}
+          onToggle={onToggle}
+          onRename={onRename}
         />
       ))}
       {tempTodo && (
@@ -30,6 +36,8 @@ export const TodoList: React.FC<TodoListProps> = ({
           todo={tempTodo}
           isLoading={true} // tempTodo zawsze ma loader
           onDelete={() => {}}
+          onToggle={() => {}}
+          onRename={async () => false}
         />
       )}
     </section>

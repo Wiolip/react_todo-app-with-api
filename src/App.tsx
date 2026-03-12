@@ -9,7 +9,13 @@ import React, {
 } from 'react';
 import classNames from 'classnames';
 import { UserWarning } from './UserWarning';
-import { getTodos, createTodo, deleteTodo, USER_ID } from './api/todos';
+import {
+  getTodos,
+  createTodo,
+  deleteTodo,
+  USER_ID,
+  updateTodo,
+} from './api/todos';
 import { NewTodoForm } from './components/NewTodoForm';
 import { Todo } from './types/Todo';
 import { TodoList } from './components/TodoList';
@@ -23,6 +29,7 @@ export const App: React.FC = () => {
   const [loadingIds, setLoadingIds] = useState<number[]>([]);
   const [filter, setFilter] = useState<Filter>('all');
   const [error, setError] = useState<string | null>(null);
+
   const todoFieldRef = useRef<HTMLInputElement>(null);
   const errorTimeoutRef = useRef<number | null>(null);
 
@@ -88,6 +95,10 @@ export const App: React.FC = () => {
     };
   }, [todos, filter]);
 
+  // Derived UI states
+  const isAllCompleted = todos.length > 0 && todos.every(t => t.completed);
+  const hasTodos = todos.length > 0 || tempTodo;
+
   // Add new todo
   const handleAdd = async (title: string): Promise<boolean> => {
     const trimmedTitle = title.trim();
@@ -128,10 +139,73 @@ export const App: React.FC = () => {
     try {
       await deleteTodo(id);
       setTodos(prev => prev.filter(t => t.id !== id));
+      focusField();
     } catch {
       showError('Unable to delete a todo');
     } finally {
       setLoadingIds(prev => prev.filter(lid => lid !== id));
+    }
+  };
+
+  // toggle todo
+  const handleToggle = async (todo: Todo) => {
+    setLoadingIds(prev => [...prev, todo.id]);
+
+    try {
+      const updated = await updateTodo(todo.id, {
+        completed: !todo.completed,
+      });
+
+      setTodos(prev => prev.map(t => (t.id === todo.id ? updated : t)));
+    } catch {
+      showError('Unable to update a todo');
+      throw new Error('Update failed');
+    } finally {
+      setLoadingIds(prev => prev.filter(id => id !== todo.id));
+    }
+  };
+
+  const handleToggleAll = async () => {
+    const newStatus = !isAllCompleted;
+    const todosToUpdate = todos.filter(todo => todo.completed !== newStatus);
+
+    try {
+      await Promise.all(todosToUpdate.map(todo => handleToggle(todo)));
+    } catch {}
+  };
+
+  const handleRename = async (
+    todo: Todo,
+    newTitle: string,
+  ): Promise<boolean> => {
+    const trimmed = newTitle.trim();
+
+    if (!trimmed) {
+      await handleDelete(todo.id);
+
+      return true;
+    }
+
+    if (trimmed === todo.title) {
+      return true;
+    }
+
+    setLoadingIds(prev => [...prev, todo.id]);
+
+    try {
+      const updated = await updateTodo(todo.id, {
+        title: trimmed,
+      });
+
+      setTodos(prev => prev.map(t => (t.id === todo.id ? updated : t)));
+
+      return true;
+    } catch {
+      showError('Unable to update a todo');
+
+      return false;
+    } finally {
+      setLoadingIds(prev => prev.filter(id => id !== todo.id));
     }
   };
 
@@ -146,10 +220,6 @@ export const App: React.FC = () => {
     return <UserWarning />;
   }
 
-  // Derived UI states
-  const isAllCompleted = todos.length > 0 && activeTodos.length === 0;
-  const hasTodos = todos.length > 0 || tempTodo;
-
   return (
     <div className="todoapp">
       <h1 className="todoapp__title">todos</h1>
@@ -163,6 +233,7 @@ export const App: React.FC = () => {
                 active: isAllCompleted,
               })}
               data-cy="ToggleAllButton"
+              onClick={handleToggleAll}
             />
           )}
 
@@ -179,6 +250,8 @@ export const App: React.FC = () => {
             tempTodo={tempTodo}
             loadingIds={loadingIds}
             onDelete={handleDelete}
+            onToggle={handleToggle}
+            onRename={handleRename}
           />
         )}
 
