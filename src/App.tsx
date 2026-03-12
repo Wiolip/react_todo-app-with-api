@@ -1,21 +1,21 @@
 /* eslint-disable jsx-a11y/label-has-associated-control */
 /* eslint-disable jsx-a11y/control-has-associated-label */
-import React, { useEffect, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import classNames from 'classnames';
 import { UserWarning } from './UserWarning';
-import {
-  getTodos,
-  createTodo,
-  deleteTodo,
-  updateTodo,
-  USER_ID,
-} from './api/todos';
+import { getTodos, createTodo, deleteTodo, USER_ID } from './api/todos';
 import { NewTodoForm } from './components/NewTodoForm';
 import { Todo } from './types/Todo';
 import { TodoList } from './components/TodoList';
 import { Filter, FILTERS } from './types/Filters';
 import { ErrorNotification } from './components/ErrorNotification';
 import { FilterComponent } from './components/FilterComponent';
-import classNames from 'classnames';
 
 export const App: React.FC = () => {
   const [todos, setTodos] = useState<Todo[]>([]);
@@ -23,17 +23,20 @@ export const App: React.FC = () => {
   const [loadingIds, setLoadingIds] = useState<number[]>([]);
   const [filter, setFilter] = useState<Filter>('all');
   const [error, setError] = useState<string | null>(null);
-
-  // Ref do focusowania inputa
   const todoFieldRef = useRef<HTMLInputElement>(null);
-
-  const focusField = () => {
-    todoFieldRef.current?.focus();
-  };
-
-  //error
   const errorTimeoutRef = useRef<number | null>(null);
 
+  // Focus the input field
+  const focusField = useCallback(() => {
+    todoFieldRef.current?.focus();
+  }, []);
+
+  // Refocus input whenever temporary todo changes
+  useEffect(() => {
+    focusField();
+  }, [tempTodo, focusField]);
+
+  // Display error message and hide it automatically after 3 seconds
   const showError = (message: string) => {
     setError(message);
 
@@ -43,11 +46,10 @@ export const App: React.FC = () => {
 
     errorTimeoutRef.current = window.setTimeout(() => {
       setError(null);
-      errorTimeoutRef.current = null;
     }, 3000);
   };
 
-  // Wczytywanie todos
+  // Load todos from API when the component mounts
   useEffect(() => {
     if (!USER_ID) {
       return;
@@ -55,9 +57,9 @@ export const App: React.FC = () => {
 
     getTodos()
       .then(setTodos)
-      .catch(() => showError('Unable to load todos'))
-      .finally(focusField);
+      .catch(() => showError('Unable to load todos'));
 
+    // Cleanup timeout on unmount
     return () => {
       if (errorTimeoutRef.current) {
         clearTimeout(errorTimeoutRef.current);
@@ -65,17 +67,38 @@ export const App: React.FC = () => {
     };
   }, []);
 
+  // Memoized calculations for derived todo lists
+  const { activeTodos, completedTodos, filteredTodos } = useMemo(() => {
+    const active = todos.filter(t => !t.completed);
+    const completed = todos.filter(t => t.completed);
+    let filtered = todos;
+
+    if (filter === FILTERS.active) {
+      filtered = active;
+    }
+
+    if (filter === FILTERS.completed) {
+      filtered = completed;
+    }
+
+    return {
+      activeTodos: active,
+      completedTodos: completed,
+      filteredTodos: filtered,
+    };
+  }, [todos, filter]);
+
+  // Add new todo
   const handleAdd = async (title: string): Promise<boolean> => {
     const trimmedTitle = title.trim();
 
-    // Walidacja pustego tytułu
     if (!trimmedTitle) {
       showError('Title should not be empty');
-      focusField();
 
       return false;
     }
 
+    // Optimistic UI: show temporary todo while request is in progress
     setTempTodo({
       id: 0,
       userId: USER_ID,
@@ -87,25 +110,24 @@ export const App: React.FC = () => {
       const newTodo = await createTodo({ title: trimmedTitle });
 
       setTodos(current => [...current, newTodo]);
-      setTempTodo(null);
-      setTimeout(focusField, 10);
 
       return true;
     } catch {
       showError('Unable to add a todo');
-      setTempTodo(null);
-      setTimeout(focusField, 0);
 
       return false;
+    } finally {
+      setTempTodo(null);
     }
   };
 
+  // Delete a todo
   const handleDelete = async (id: number) => {
     setLoadingIds(prev => [...prev, id]);
+
     try {
       await deleteTodo(id);
       setTodos(prev => prev.filter(t => t.id !== id));
-      setTimeout(focusField, 10);
     } catch {
       showError('Unable to delete a todo');
     } finally {
@@ -113,49 +135,20 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleUpdate = async (id: number, data: Partial<Todo>) => {
-    setLoadingIds(prev => [...prev, id]);
-    try {
-      const updatedTodo = await updateTodo(id, data);
-
-      setTodos(current => current.map(t => (t.id === id ? updatedTodo : t)));
-    } catch (err) {
-      showError('Unable to update a todo');
-      throw err;
-    } finally {
-      setLoadingIds(prev => prev.filter(lid => lid !== id));
-    }
-  };
-
-  const handleToggleAll = async () => {
-    const allCompleted = todos.every(todo => todo.completed);
-    const targetStatus = !allCompleted;
-    const toUpdate = todos.filter(todo => todo.completed !== targetStatus);
-
-    await Promise.all(
-      toUpdate.map(todo => handleUpdate(todo.id, { completed: targetStatus })),
-    );
-  };
-
+  // Remove all completed todos
   const handleClearCompleted = async () => {
-    const completedTodos = todos.filter(t => t.completed);
-
-    // Wykonujemy wszystkie usunięcia równolegle
     await Promise.allSettled(completedTodos.map(todo => handleDelete(todo.id)));
     focusField();
   };
 
-  // Filtrowanie todos
-  const filteredTodos =
-    filter === FILTERS.all
-      ? todos
-      : filter === FILTERS.active
-        ? todos.filter(t => !t.completed)
-        : todos.filter(t => t.completed);
-
+  // If USER_ID is missing, show warning instead of the app
   if (!USER_ID) {
     return <UserWarning />;
   }
+
+  // Derived UI states
+  const isAllCompleted = todos.length > 0 && activeTodos.length === 0;
+  const hasTodos = todos.length > 0 || tempTodo;
 
   return (
     <div className="todoapp">
@@ -163,16 +156,16 @@ export const App: React.FC = () => {
 
       <div className="todoapp__content">
         <header className="todoapp__header">
-          {(todos.length > 0 || tempTodo) && (
+          {hasTodos && (
             <button
               type="button"
               className={classNames('todoapp__toggle-all', {
-                active: todos.every(t => t.completed),
+                active: isAllCompleted,
               })}
               data-cy="ToggleAllButton"
-              onClick={handleToggleAll}
             />
           )}
+
           <NewTodoForm
             onAdd={handleAdd}
             loading={!!tempTodo}
@@ -180,28 +173,29 @@ export const App: React.FC = () => {
           />
         </header>
 
-        {(todos.length > 0 || tempTodo) && (
+        {hasTodos && (
           <TodoList
             todos={filteredTodos}
             tempTodo={tempTodo}
             loadingIds={loadingIds}
             onDelete={handleDelete}
-            onUpdate={handleUpdate}
           />
         )}
 
         {/* Footer */}
-        {(todos.length > 0 || tempTodo) && (
+        {hasTodos && (
           <footer className="todoapp__footer" data-cy="Footer">
             <span className="todo-count" data-cy="TodosCounter">
-              {todos.filter(t => !t.completed).length} items left
+              {/*eslint-disable-next-line max-len*/}
+              {activeTodos.length} {activeTodos.length === 1 ? 'item' : 'items'}{' '}
+              left
             </span>
             <FilterComponent current={filter} onChange={setFilter} />
             <button
               type="button"
               className="todoapp__clear-completed"
               data-cy="ClearCompletedButton"
-              disabled={!todos.some(t => t.completed)}
+              disabled={completedTodos.length === 0}
               onClick={handleClearCompleted}
             >
               Clear completed
