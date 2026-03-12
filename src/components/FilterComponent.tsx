@@ -7,11 +7,12 @@ interface FilterProps {
   onChange: (filter: FilterType) => void;
 }
 
+const capitalize = (value: string) => value[0].toUpperCase() + value.slice(1);
+
 export const FilterComponent: React.FC<FilterProps> = ({
   current,
   onChange,
 }) => {
-  const capitalize = (value: string) => value[0].toUpperCase() + value.slice(1);
 
   return (
     <nav className="filter" data-cy="Filter">
